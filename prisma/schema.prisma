@@ -1,0 +1,416 @@
+// LEADHUNTER AI — схема данных.
+// SQLite для локальной разработки; перечисления хранятся строками (значения — в src/lib/domain.ts).
+// Поля Json хранят структурированные данные (факторы, находки, блоки КП).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         String   @default("manager") // manager | admin
+  createdAt    DateTime @default(now())
+
+  profile     ExecutorProfile?
+  clients     Client[]
+  templates   MessageTemplate[]
+  suppression SuppressionEntry[]
+  tasks       ClientTask[]        @relation("TaskAssignee")
+  usage       AIUsageLog[]
+  audit       AuditLog[]
+}
+
+// Профиль исполнителя: «допустимые факты», которые ИИ может использовать о пользователе
+model ExecutorProfile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName    String   @default("")
+  companyName    String   @default("")
+  description    String   @default("")
+  specialization String   @default("")
+  advantages     String   @default("")
+  portfolioUrl   String   @default("")
+  website        String   @default("")
+  signature      String   @default("")
+  cases          String   @default("") // свободный текст: кейсы, которые разрешено упоминать
+  pricingNotes   String   @default("") // цены/условия, введённые пользователем
+  requisites     String   @default("") // реквизиты для КП
+  updatedAt      DateTime @updatedAt
+}
+
+model Client {
+  id            String    @id @default(cuid())
+  ownerId       String
+  owner         User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  companyName   String
+  description   String    @default("")
+  category      String    @default("")
+  industry      String    @default("")
+  country       String    @default("")
+  region        String    @default("")
+  city          String    @default("")
+  website       String    @default("")
+  logoUrl       String    @default("")
+  language      String    @default("ru")
+  status        String    @default("new")
+  priority      String    @default("medium")
+  archived      Boolean   @default(false)
+  doNotContact  Boolean   @default(false)
+  firstSeenAt   DateTime  @default(now())
+  lastCheckedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  contacts      Contact[]
+  sources       LeadSource[]
+  provenance    FieldProvenance[]
+  analyses      LeadAnalysis[]
+  scores        LeadScore[]
+  messages      AIMessage[]
+  conversations Conversation[]
+  interactions  Interaction[]
+  tasks         ClientTask[]
+  deals         Deal[]
+  proposals     Proposal[]
+  consents      ConsentRecord[]
+  copilot       CopilotMessage[]
+  usage         AIUsageLog[]
+
+  @@index([ownerId, archived])
+}
+
+model Contact {
+  id                 String    @id @default(cuid())
+  clientId           String
+  client             Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  type               String // email | phone | website | telegram | whatsapp | linkedin | social | other
+  value              String
+  normalizedValue    String
+  label              String    @default("")
+  sourceId           String?
+  source             LeadSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  verificationStatus String    @default("found") // found | formal | confirmed | invalid | unknown
+  verifiedAt         DateTime?
+  lastCheckedAt      DateTime?
+  discoveredAt       DateTime  @default(now())
+  doNotContact       Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  conversations Conversation[]
+  consents      ConsentRecord[]
+  messages      AIMessage[]
+
+  @@index([clientId])
+  @@index([normalizedValue])
+}
+
+model LeadSource {
+  id           String    @id @default(cuid())
+  clientId     String
+  client       Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  sourceType   String // website | directory | marketplace | job_post | social | manual | other
+  sourceUrl    String    @default("")
+  title        String    @default("")
+  method       String    @default("manual") // manual | fetch | import
+  capturedAt   DateTime  @default(now())
+  checkedAt    DateTime?
+  rawReference String    @default("") // краткая выдержка/текст страницы (обрезанный)
+  evidence     String    @default("") // какие утверждения подтверждает источник
+  createdAt    DateTime  @default(now())
+
+  contacts   Contact[]
+  provenance FieldProvenance[]
+
+  @@index([clientId])
+}
+
+// Происхождение значений полей; несколько записей на одно поле = возможный конфликт
+model FieldProvenance {
+  id         String     @id @default(cuid())
+  clientId   String
+  client     Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  field      String
+  value      String
+  sourceId   String?
+  source     LeadSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  capturedAt DateTime   @default(now())
+  selected   Boolean    @default(false)
+
+  @@index([clientId, field])
+}
+
+model LeadAnalysis {
+  id              String   @id @default(cuid())
+  clientId        String
+  client          Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  summary         String
+  findings        Json // структурированный отчёт
+  recommendations Json
+  risks           Json
+  sources         Json
+  confidence      String   @default("low")
+  model           String
+  promptVersion   String
+  pagesAnalyzed   Json
+  createdAt       DateTime @default(now())
+
+  @@index([clientId, createdAt])
+}
+
+model LeadScore {
+  id           String   @id @default(cuid())
+  clientId     String
+  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  score        Int
+  factors      Json
+  explanation  String
+  calculatedAt DateTime @default(now())
+
+  @@index([clientId, calculatedAt])
+}
+
+model AIMessage {
+  id              String    @id @default(cuid())
+  clientId        String
+  client          Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  contactId       String?
+  contact         Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  generationId    String // объединяет три варианта одной генерации
+  variantKey      String // recommended | short | expert | manual
+  label           String    @default("")
+  channel         String
+  language        String
+  tone            String
+  goal            String
+  service         String
+  length          String
+  instructions    String    @default("")
+  subject         String    @default("")
+  body            String
+  personalization Json
+  assumptions     Json
+  warnings        Json
+  evidence        Json? // { serviceRationale, toVerify[] } — блок «Почему ИИ составил именно это сообщение?»
+  status          String    @default("draft") // draft | saved | queued | sent | archived
+  version         Int       @default(1)
+  model           String    @default("")
+  promptVersion   String    @default("")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  versions AIMessageVersion[]
+
+  @@index([clientId, createdAt])
+}
+
+model AIMessageVersion {
+  id        String    @id @default(cuid())
+  messageId String
+  message   AIMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  version   Int
+  subject   String    @default("")
+  body      String
+  origin    String // generated | edited | rewrite | restore
+  note      String    @default("")
+  createdAt DateTime  @default(now())
+
+  @@unique([messageId, version])
+}
+
+model MessageTemplate {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name      String
+  category  String   @default("")
+  channel   String
+  language  String   @default("ru")
+  subject   String   @default("")
+  content   String
+  variables Json
+  createdAt DateTime @default(now())
+}
+
+model Conversation {
+  id               String    @id @default(cuid())
+  clientId         String
+  client           Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  contactId        String?
+  contact          Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  channel          String
+  externalThreadId String    @default("") // email: адрес; telegram: chat_id; whatsapp: номер
+  connectionId     String    @default("")
+  status           String    @default("open")
+  lastInboundAt    DateTime?
+  createdAt        DateTime  @default(now())
+
+  items ConversationMessage[]
+
+  @@index([clientId])
+}
+
+model ConversationMessage {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction      String // outbound | inbound
+  aiMessageId    String?
+  subject        String       @default("")
+  body           String
+  status         String       @default("draft") // draft | pending_approval | sending | sent | delivered | failed | replied | received
+  error          String       @default("")
+  externalId     String       @default("")
+  idempotencyKey String?      @unique
+  approvedAt     DateTime?
+  approvedById   String?
+  sentAt         DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model Interaction {
+  id         String   @id @default(cuid())
+  clientId   String
+  client     Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  type       String
+  actorId    String?
+  actorLabel String   @default("system")
+  summary    String
+  payload    Json
+  createdAt  DateTime @default(now())
+
+  @@index([clientId, createdAt])
+}
+
+model ClientTask {
+  id          String    @id @default(cuid())
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  title       String
+  description String    @default("")
+  dueAt       DateTime?
+  priority    String    @default("medium")
+  status      String    @default("new") // new | in_progress | done | cancelled
+  kind        String    @default("task") // task | follow_up | meeting | call
+  source      String    @default("manual") // manual | ai
+  assigneeId  String?
+  assignee    User?     @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([clientId, status])
+}
+
+model Deal {
+  id              String    @id @default(cuid())
+  clientId        String
+  client          Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  title           String
+  stage           String    @default("qualification")
+  amount          Float?
+  currency        String    @default("RUB")
+  probability     Int?
+  expectedCloseAt DateTime?
+  createdAt       DateTime  @default(now())
+}
+
+model Proposal {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  title     String
+  service   String   @default("")
+  content   Json // { blocks: [{ key, title, body }] }
+  status    String   @default("draft") // draft | ready | sent | accepted | rejected
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  versions ProposalVersion[]
+}
+
+model ProposalVersion {
+  id         String   @id @default(cuid())
+  proposalId String
+  proposal   Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  version    Int
+  title      String
+  content    Json
+  createdAt  DateTime @default(now())
+
+  @@unique([proposalId, version])
+}
+
+model ConsentRecord {
+  id           String   @id @default(cuid())
+  clientId     String
+  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  contactId    String?
+  contact      Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  basis        String // consent | published_request | legitimate_interest | existing_relationship
+  note         String   @default("")
+  recordedById String
+  createdAt    DateTime @default(now())
+}
+
+model SuppressionEntry {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  value     String // нормализованный email/телефон/домен/username
+  type      String
+  reason    String   @default("")
+  createdAt DateTime @default(now())
+
+  @@unique([ownerId, value])
+}
+
+model CopilotMessage {
+  id        String   @id @default(cuid())
+  clientId  String
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  userId    String
+  role      String // user | assistant
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([clientId, createdAt])
+}
+
+model AIUsageLog {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId     String?
+  client       Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  provider     String
+  model        String
+  operation    String
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  costEstimate Float    @default(0)
+  status       String // ok | error | refused | not_configured
+  error        String   @default("")
+  createdAt    DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String
+  meta      Json
+  createdAt DateTime @default(now())
+}
