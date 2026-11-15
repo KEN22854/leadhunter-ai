@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  serverExternalPackages: ["pdfmake", "nodemailer"],
+  // Отдельная папка сборки позволяет проверять next build, не останавливая dev-сервер (NEXT_DIST_DIR=.next-build)
+  distDir: process.env.NEXT_DIST_DIR || ".next",
+  serverExternalPackages: ["pdfmake", "nodemailer", "imapflow", "mailparser"],
   async headers() {
     return [
       {

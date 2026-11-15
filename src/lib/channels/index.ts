@@ -2,12 +2,14 @@ import "server-only";
 import nodemailer from "nodemailer";
 import type { Channel } from "../domain";
 
-// Адаптеры каналов связи. Секреты — только из переменных окружения.
+// Адаптеры каналов связи. Секреты — из переменных окружения; значения из «Настройки → Подключения»
+// (зашифрованы в БД) подставляются в process.env модулем settings-store.
 // Ни один адаптер не имитирует успех: без конфигурации send() бросает ChannelError.
 
 export type ChannelState = "connected" | "not_configured" | "unavailable";
 export type ChannelStatus = { channel: Channel; state: ChannelState; detail: string; setupHint: string; supportsInbound: boolean };
-export type SendInput = { to: string; threadId: string; subject: string; body: string; lastInboundAt: Date | null };
+export type OutgoingAttachment = { filename: string; content: Buffer; contentType: string };
+export type SendInput = { to: string; threadId: string; subject: string; body: string; lastInboundAt: Date | null; attachments?: OutgoingAttachment[] };
 export type SendResult = { externalId: string; threadId?: string };
 
 export class ChannelError extends Error {
@@ -38,8 +40,8 @@ const email: ChannelAdapter = {
       channel: "email",
       state: ok ? "connected" : "not_configured",
       detail: ok ? `SMTP ${env("SMTP_HOST")}, отправитель ${env("SMTP_FROM")}` : "SMTP не настроен",
-      setupHint: "Задайте SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM в .env (рекомендуется отдельный ящик/домен для рассылок с SPF/DKIM).",
-      supportsInbound: false,
+      setupHint: "Задайте SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM в «Настройки → Подключения» (или .env) (рекомендуется отдельный ящик/домен для рассылок с SPF/DKIM).",
+      supportsInbound: Boolean(env("IMAP_HOST")),
     };
   },
   async verify() {
@@ -55,7 +57,17 @@ const email: ChannelAdapter = {
     if (this.status().state !== "connected") throw new ChannelError("not_configured", "Email-канал не подключён");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(i.to)) throw new ChannelError("bad_recipient", "Некорректный email получателя");
     try {
-      const info = await transport().sendMail({ from: env("SMTP_FROM"), to: i.to, subject: i.subject || "(без темы)", text: i.body });
+      const from = env("SMTP_FROM");
+      const fromAddr = from.match(/<([^>]+)>/)?.[1] ?? from;
+      const info = await transport().sendMail({
+        from,
+        to: i.to,
+        subject: i.subject || "(без темы)",
+        text: i.body,
+        attachments: i.attachments?.map((a) => ({ filename: a.filename, content: a.content, contentType: a.contentType })),
+        // Стандартный заголовок отписки: почтовые клиенты показывают кнопку «Отписаться»
+        headers: { "List-Unsubscribe": `<mailto:${fromAddr}?subject=unsubscribe>` },
+      });
       return { externalId: info.messageId ?? "", threadId: i.to };
     } catch (e) {
       throw new ChannelError("send_failed", `SMTP: ${e instanceof Error ? e.message : String(e)}`, true);
@@ -107,6 +119,7 @@ const telegram: ChannelAdapter = {
     }
   },
   async send(i) {
+    if (i.attachments?.length) throw new ChannelError("attachments_unsupported", "Вложения в этом канале не поддерживаются — отправьте ссылку");
     if (this.status().state !== "connected") throw new ChannelError("not_configured", "Telegram-канал не подключён");
     if (!/^-?\d+$/.test(i.threadId))
       throw new ChannelError("no_chat", "Нет диалога с этим пользователем: Telegram-бот может написать только тому, кто сам начал с ним диалог. Попросите клиента написать боту и нажмите «Синхронизировать».");
@@ -150,6 +163,7 @@ const whatsapp: ChannelAdapter = {
     }
   },
   async send(i) {
+    if (i.attachments?.length) throw new ChannelError("attachments_unsupported", "Вложения в этом канале не поддерживаются — отправьте ссылку");
     if (this.status().state !== "connected") throw new ChannelError("not_configured", "WhatsApp-канал не подключён");
     const to = i.to.replace(/[^\d]/g, "");
     const inWindow = i.lastInboundAt && Date.now() - i.lastInboundAt.getTime() < 24 * 3600_000;

@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   description: "Поиск клиентов, управление лидами и AI-поддержка продаж",
 };
 
-export const viewport: Viewport = { themeColor: "#0c0e16", width: "device-width", initialScale: 1 };
+export const viewport: Viewport = { themeColor: "#060608", width: "device-width", initialScale: 1 };
 
 const themeScript = `try{var t=localStorage.getItem("lh-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}`;
 

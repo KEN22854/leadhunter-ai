@@ -6,7 +6,7 @@ import { CLIENT_STATUSES, keysOf } from "@/lib/domain";
 import { suppressionKeys } from "@/lib/normalize";
 import { countConflicts, recalcScore } from "@/lib/scoring";
 import { audit, logInteraction } from "@/lib/timeline";
-import { aiModel, isAIConfigured } from "@/lib/ai/provider";
+import { aiStatus } from "@/lib/ai/provider";
 
 export const GET = handler(async (_req, { clientId }) => {
   const user = await requireUser();
@@ -29,7 +29,7 @@ export const GET = handler(async (_req, { clientId }) => {
     score,
     analysis: analyses[0] ?? null,
     conflicts: await countConflicts(clientId),
-    ai: { configured: isAIConfigured(), model: aiModel() },
+    ai: await aiStatus().then((a) => ({ configured: a.configured, model: a.model, backend: a.backend })),
   };
 });
 

@@ -7,6 +7,24 @@ import { checkOutreachCompliance, isOptOutReply, optOutFooter } from "./complian
 import { CHANNELS, type Channel } from "./domain";
 import { normalizeContact, suppressionKeys } from "./normalize";
 import { logInteraction, audit } from "./timeline";
+import { buildReferenceAttachments } from "./reference/service";
+import type { Prisma } from "@prisma/client";
+
+export type AttachmentRef = { kind: "reference_pdf" | "reference_html"; referenceId: string };
+
+async function resolveAttachments(refs: AttachmentRef[] | null | undefined) {
+  if (!refs?.length) return [];
+  const byRef = new Map<string, { pdf: boolean; html: boolean }>();
+  for (const r of refs) {
+    const e = byRef.get(r.referenceId) ?? { pdf: false, html: false };
+    if (r.kind === "reference_pdf") e.pdf = true;
+    if (r.kind === "reference_html") e.html = true;
+    byRef.set(r.referenceId, e);
+  }
+  const out = [];
+  for (const [id, o] of byRef) out.push(...(await buildReferenceAttachments(id, o)));
+  return out;
+}
 
 /** Находит или создаёт ветку переписки клиента для контакта и канала. */
 async function ensureConversation(clientId: string, contactId: string, channel: Channel) {
@@ -27,8 +45,14 @@ async function ensureConversation(clientId: string, contactId: string, channel: 
 export async function queueOutbound(
   user: CurrentUser,
   clientId: string,
-  p: { channel: Channel; contactId: string; subject: string; body: string; aiMessageId?: string | null },
+  p: { channel: Channel; contactId: string; subject: string; body: string; aiMessageId?: string | null; attachments?: AttachmentRef[] },
 ) {
+  if (p.attachments?.length && p.channel !== "email") throw new ApiError(400, "attachments_unsupported", "Вложения поддерживаются только в email");
+  if (p.attachments?.length) {
+    const ids = [...new Set(p.attachments.map((a) => a.referenceId))];
+    const own = await prisma.reference.count({ where: { id: { in: ids }, clientId } });
+    if (own !== ids.length) throw new ApiError(400, "bad_attachment", "Референс не принадлежит этому клиенту");
+  }
   const contact = await prisma.contact.findFirst({ where: { id: p.contactId, clientId } });
   if (!contact) throw new ApiError(404, "no_contact", "Контакт не найден у этого клиента");
   if (!CHANNEL_CONTACT_TYPE[p.channel].includes(contact.type))
@@ -44,7 +68,15 @@ export async function queueOutbound(
 
   const conv = await ensureConversation(clientId, p.contactId, p.channel);
   const item = await prisma.conversationMessage.create({
-    data: { conversationId: conv.id, direction: "outbound", aiMessageId: p.aiMessageId ?? null, subject: p.subject, body, status: "pending_approval" },
+    data: {
+      conversationId: conv.id,
+      direction: "outbound",
+      aiMessageId: p.aiMessageId ?? null,
+      subject: p.subject,
+      body,
+      status: "pending_approval",
+      attachments: p.attachments?.length ? (p.attachments as unknown as Prisma.InputJsonValue) : undefined,
+    },
   });
   if (p.aiMessageId) await prisma.aIMessage.updateMany({ where: { id: p.aiMessageId, clientId }, data: { status: "queued" } });
   await logInteraction(clientId, "message_queued", `Сообщение подготовлено к отправке (${CHANNELS[p.channel]})`, user, { itemId: item.id });
@@ -81,12 +113,14 @@ export async function approveAndSend(user: CurrentUser, itemId: string, idempote
   await audit(user.id, "message.approve", "ConversationMessage", itemId, { channel: conv.channel });
 
   try {
+    const attachments = await resolveAttachments(item.attachments as unknown as AttachmentRef[] | null);
     const r = await adapter.send({
       to: conv.contact.value.trim(),
       threadId: conv.externalThreadId,
       subject: item.subject,
       body: item.body,
       lastInboundAt: conv.lastInboundAt,
+      attachments,
     });
     const sent = await prisma.conversationMessage.update({ where: { id: itemId }, data: { status: "sent", sentAt: new Date(), externalId: r.externalId } });
     if (r.threadId && r.threadId !== conv.externalThreadId) await prisma.conversation.update({ where: { id: conv.id }, data: { externalThreadId: r.threadId } });
@@ -130,7 +164,7 @@ export async function logManualMessage(
   return item;
 }
 
-async function onInbound(user: CurrentUser | null, clientId: string, conversationId: string, body: string, contactType: string, contactValue: string) {
+export async function onInbound(user: CurrentUser | null, clientId: string, conversationId: string, body: string, contactType: string, contactValue: string) {
   await prisma.conversation.update({ where: { id: conversationId }, data: { lastInboundAt: new Date() } });
   await prisma.conversationMessage.updateMany({ where: { conversationId, direction: "outbound", status: { in: ["sent", "delivered"] } }, data: { status: "replied" } });
   await logInteraction(clientId, "reply_received", `Получен ответ: «${body.slice(0, 120)}»`, user);
@@ -144,16 +178,30 @@ async function onInbound(user: CurrentUser | null, clientId: string, conversatio
       });
     await prisma.contact.updateMany({ where: { clientId, normalizedValue: normalizeContact(contactType, contactValue) }, data: { doNotContact: true } });
     await logInteraction(clientId, "suppression", "Получатель отказался от обращений — контакт добавлен в список запрета", user);
+    await prisma.campaignItem.updateMany({ where: { clientId, status: { in: ["ready", "queued", "sent", "failed"] } }, data: { status: "opted_out" } });
+    return;
   }
+  // Ответ по кампании: дальнейшие письма этому клиенту не отправляются автоматически, создаётся задача ответить
+  await prisma.campaignItem.updateMany({ where: { clientId, status: { in: ["ready", "queued", "sent"] } }, data: { status: "replied" } });
+  const open = await prisma.clientTask.findFirst({ where: { clientId, kind: "follow_up", status: { in: ["new", "in_progress"] }, title: { startsWith: "Ответить" } } });
+  if (!open)
+    await prisma.clientTask.create({
+      data: { clientId, title: "Ответить на сообщение клиента", description: body.slice(0, 500), kind: "follow_up", priority: "high", dueAt: new Date(Date.now() + 24 * 3600_000), source: "manual" },
+    });
+  const client = await prisma.client.findUnique({ where: { id: clientId }, select: { status: true } });
+  if (client && ["new", "researching", "ready", "contacted"].includes(client.status)) await prisma.client.update({ where: { id: clientId }, data: { status: "negotiating" } });
 }
 
-let tgOffset: number | undefined;
 /** Синхронизация входящих Telegram: сопоставление по username с контактами клиентов пользователя. */
 export async function syncTelegram(user: CurrentUser) {
+  // Офсет хранится в БД — после перезапуска не получаем старые обновления повторно
+  const state = await prisma.appState.findUnique({ where: { key: "telegram_offset" } });
+  let tgOffset = state ? Number(state.value) : undefined;
   const updates = await telegramGetUpdates(tgOffset);
   let matched = 0;
   for (const u of updates) {
     tgOffset = u.update_id + 1;
+    await prisma.appState.upsert({ where: { key: "telegram_offset" }, update: { value: String(tgOffset) }, create: { key: "telegram_offset", value: String(tgOffset) } });
     const m = u.message;
     if (!m?.text || !m.from?.username) continue;
     const username = m.from.username.toLowerCase();

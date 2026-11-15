@@ -63,7 +63,7 @@ export function LeadScorePanel({ compact }: { compact?: boolean }) {
               </span>
             </div>
             <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-border/60" aria-hidden>
-              <div className="h-full rounded-full bg-gradient-to-r from-accent to-accent2" style={{ width: `${(f.points / f.max) * 100}%` }} />
+              <div className="h-full rounded-full bg-accent" style={{ width: `${(f.points / f.max) * 100}%` }} />
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-muted">
               <span className="flex-1">{f.basis}</span>

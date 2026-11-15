@@ -9,8 +9,8 @@ export function AINotConfigured() {
       <div>
         <p className="font-medium text-warn">AI не подключён</p>
         <p className="text-muted">
-          Добавьте ключ Anthropic API в переменную <code className="text-text">ANTHROPIC_API_KEY</code> файла <code className="text-text">.env</code> на сервере и перезапустите
-          приложение. Остальные функции карточки работают без AI.{" "}
+          Самый простой способ — войти в Claude Code на этом компьютере (выполните <code className="text-text">claude</code> в терминале и войдите в аккаунт): AI будет работать по вашей подписке Claude. Либо задайте{" "}
+          <code className="text-text">ANTHROPIC_API_KEY</code> в <code className="text-text">.env</code> и перезапустите приложение. Остальные функции работают без AI.{" "}
           <Link href="/settings" className="text-accent2 hover:underline">
             Настройки
           </Link>

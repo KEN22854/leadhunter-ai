@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { Crosshair } from "lucide-react";
 import { Button, InlineError } from "@/components/ui";
 import { api, ApiClientError } from "@/lib/client-api";
+import { safeNextPath } from "@/lib/net";
 
 function LoginForm() {
   const sp = useSearchParams();
@@ -18,9 +19,8 @@ function LoginForm() {
     setError(null);
     try {
       await api("POST", "/api/auth/login", { email, password });
-      const next = sp.get("next");
       // Полная навигация: серверный layout сразу получает новую cookie сессии
-      window.location.assign(next && next.startsWith("/") && !next.startsWith("//") ? next : "/");
+      window.location.assign(safeNextPath(sp.get("next")));
       return;
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : "Ошибка входа");
@@ -32,7 +32,7 @@ function LoginForm() {
   return (
     <form onSubmit={submit} className="card w-full max-w-sm space-y-4 p-6">
       <div className="flex items-center gap-2">
-        <div className="rounded-lg bg-gradient-to-br from-accent to-accent2 p-2 text-white">
+        <div className="rounded-lg bg-accent p-2 text-on-accent">
           <Crosshair className="h-5 w-5" />
         </div>
         <div>
@@ -42,9 +42,9 @@ function LoginForm() {
       </div>
       <div>
         <label className="label" htmlFor="email">
-          Email
+          Логин или email
         </label>
-        <input id="email" className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <input id="email" className="input" type="text" autoCapitalize="none" spellCheck={false} autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
       </div>
       <div>
         <label className="label" htmlFor="password">

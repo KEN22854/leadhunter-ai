@@ -23,7 +23,7 @@ type PdfMake = {
 };
 
 let pdfmakeInstance: PdfMake | null = null;
-function pdfmake(): PdfMake {
+export function pdfmake(): PdfMake {
   if (!pdfmakeInstance) {
     const require = createRequire(import.meta.url);
     const pm = require("pdfmake") as PdfMake;

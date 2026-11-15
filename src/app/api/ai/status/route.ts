@@ -1,7 +1,7 @@
 import { handler } from "@/lib/api";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { aiModel, isAIConfigured } from "@/lib/ai/provider";
+import { aiStatus } from "@/lib/ai/provider";
 
 export const GET = handler(async () => {
   const user = await requireUser();
@@ -12,9 +12,7 @@ export const GET = handler(async () => {
     _count: true,
   });
   return {
-    configured: isAIConfigured(),
-    model: aiModel(),
-    provider: "anthropic",
+    ...(await aiStatus()),
     usage30d: {
       requests: usage._count,
       inputTokens: usage._sum.inputTokens ?? 0,

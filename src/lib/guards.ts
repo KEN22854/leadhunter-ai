@@ -27,6 +27,16 @@ export async function requireProposal(user: CurrentUser, id: string) {
   if (!p || !owns(user, p.client.ownerId)) throw deny();
   return p;
 }
+export async function requireReference(user: CurrentUser, id: string) {
+  const r = await prisma.reference.findUnique({ where: { id }, include: { client: { select: { ownerId: true, companyName: true, id: true } } } });
+  if (!r || !owns(user, r.client.ownerId)) throw deny();
+  return r;
+}
+export async function requireSearch(user: CurrentUser, id: string) {
+  const s = await prisma.leadSearch.findUnique({ where: { id } });
+  if (!s || !owns(user, s.ownerId)) throw deny();
+  return s;
+}
 export async function requireOutbound(user: CurrentUser, id: string) {
   const i = await prisma.conversationMessage.findUnique({
     where: { id },

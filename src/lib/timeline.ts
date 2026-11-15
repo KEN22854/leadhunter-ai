@@ -26,6 +26,10 @@ export const INTERACTION_TYPES = {
   note: "Заметка",
   suppression: "Запрет обработки",
   consent: "Правовое основание",
+  site_audit: "Аудит сайта",
+  reference_created: "Референс подготовлен",
+  campaign: "Кампания",
+  workspace_created: "Рабочий проект",
 } as const;
 export type InteractionType = keyof typeof INTERACTION_TYPES;
 

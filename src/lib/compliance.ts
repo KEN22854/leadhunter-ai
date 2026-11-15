@@ -1,5 +1,5 @@
 import { prisma } from "./db";
-import { suppressionKeys, normalizeDomain } from "./normalize";
+import { suppressionKeys, normalizeDomain, normalizeContact } from "./normalize";
 
 export type ComplianceIssue = { code: string; message: string; blocking: boolean };
 
@@ -23,13 +23,22 @@ export async function checkOutreachCompliance(opts: {
       issues.push({ code: "no_contact", message: "Контакт не найден у этого клиента.", blocking: true });
     } else {
       keys.push(...suppressionKeys(contact.type, contact.value));
+      // Профили из глобального Do Not Contact модуля «Спрос» (формат profile:host/path)
+      if (["telegram", "social", "linkedin"].includes(contact.type)) {
+        const v = contact.type === "telegram" ? `t.me/${normalizeContact("telegram", contact.value)}` : contact.value.toLowerCase().replace(/^https?:\/\//, "").replace(/^(www\.|m\.)/, "").replace(/\/+$/, "");
+        keys.push(`profile:${v}`);
+      }
       if (contact.doNotContact) issues.push({ code: "contact_dnc", message: "Контакт отмечен «Не связываться».", blocking: true });
       if (contact.verificationStatus === "invalid")
         issues.push({ code: "contact_invalid", message: "Контакт помечен как недействительный.", blocking: true });
       if (contact.verificationStatus === "found" || contact.verificationStatus === "unknown")
         issues.push({ code: "contact_unverified", message: "Контакт не проверен — убедитесь, что это деловой адрес компании.", blocking: false });
       const consent = await prisma.consentRecord.findFirst({
-        where: { clientId: opts.clientId, OR: [{ contactId: contact.id }, { contactId: null }] },
+        where: {
+          clientId: opts.clientId,
+          revokedAt: null,
+          AND: [{ OR: [{ contactId: contact.id }, { contactId: null }] }, { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }],
+        },
       });
       if (!consent)
         issues.push({

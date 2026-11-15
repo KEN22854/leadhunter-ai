@@ -60,6 +60,33 @@ export const RewriteSchema = z.object({
 });
 export type RewriteOutput = z.infer<typeof RewriteSchema>;
 
+// ---------- Модуль «Спрос»: классификация намерений и персональные обращения ----------
+export const SignalIntentSchema = z.object({
+  items: z.array(
+    z.object({
+      id: z.string(),
+      intent: z.enum(["order", "hire", "ongoing", "recommendation", "partner", "launch", "interest", "none"]),
+      confidence: z.number().int().min(0).max(100),
+      serviceFit: z.number().int().min(0).max(100),
+      reason: z.string(),
+    }),
+  ),
+});
+export type SignalIntentOutput = z.infer<typeof SignalIntentSchema>;
+
+export const SignalOutreachSchema = z.object({
+  variants: z.array(
+    z.object({
+      key: z.enum(["friendly", "business", "short"]),
+      subject: z.string(),
+      body: z.string(),
+      facts: z.array(z.string()),
+    }),
+  ),
+  warnings: z.array(z.string()),
+});
+export type SignalOutreachOutput = z.infer<typeof SignalOutreachSchema>;
+
 export const ProposalDraftSchema = z.object({
   title: z.string(),
   blocks: z.array(
@@ -79,3 +106,31 @@ export const ReplyDraftSchema = z.object({
   suggestedNextStep: z.string(),
 });
 export type ReplyDraftOutput = z.infer<typeof ReplyDraftSchema>;
+
+// ---------- Референс: концепция улучшений и письмо ----------
+const impact = z.enum(["high", "medium", "low"]);
+export const ReferenceConceptSchema = z.object({
+  title: z.string().describe("Название концепции, напр. «Концепция обновления сайта кофейни …»"),
+  diagnosis: z.string().describe("2–3 предложения: текущее состояние по данным аудита, без выдумок"),
+  problems: z.array(z.object({ title: z.string(), evidence: z.string().describe("Наблюдаемый факт из аудита/страниц"), severity: impact })),
+  improvements: z.array(z.object({ title: z.string(), why: z.string(), how: z.string(), impact })),
+  structure: z.array(z.object({ section: z.string(), purpose: z.string(), content: z.string() })).describe("Предлагаемая структура сайта/лендинга"),
+  style: z.object({
+    mood: z.string(),
+    palette: z.array(z.object({ name: z.string(), hex: z.string().describe("Цвет в формате #RRGGBB") })),
+    typography: z.string(),
+  }),
+  copy: z.object({ heroTitle: z.string(), heroSubtitle: z.string(), cta: z.string() }),
+  email: z.object({
+    subject: z.string().describe("Тема письма, до 70 символов, без кликбейта"),
+    body: z.string().describe("Короткое письмо от первого лица исполнителя со ссылкой на концепцию во вложении; без строки об отписке"),
+  }),
+  assumptions: z.array(z.string()),
+});
+export type ReferenceConcept = z.infer<typeof ReferenceConceptSchema>;
+
+export const PrototypeSchema = z.object({
+  html: z.string().describe("Полный самодостаточный HTML-документ: <!doctype html>, встроенный <style>, без <script> и внешних ресурсов"),
+  notes: z.string().describe("Что показано в прототипе и что заменить реальными материалами"),
+});
+export type PrototypeOutput = z.infer<typeof PrototypeSchema>;

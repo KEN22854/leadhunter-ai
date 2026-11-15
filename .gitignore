@@ -7,3 +7,12 @@ prisma/*.db-journal
 *.tsbuildinfo
 next-env.d.ts
 storage/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+
+# Рабочие папки проектов клиентов (создаются из карточки)
+/workspace/
+
+.next-build/
+.next-check/

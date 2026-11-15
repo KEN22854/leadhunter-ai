@@ -6,11 +6,23 @@ import net from "node:net";
 // только http(s), запрет приватных/локальных адресов (SSRF), учёт robots.txt, таймаут и лимит размера.
 // Не обходит авторизацию, CAPTCHA и paywall — такие страницы просто не анализируются.
 
-const UA = "LeadHunterAI/0.1 (+site analysis; respects robots.txt)";
+export const UA = "LeadHunterAI/0.2 (+site analysis; respects robots.txt)";
 const MAX_BYTES = 1_500_000;
 const TIMEOUT_MS = 10_000;
 
-export type FetchedPage = { url: string; title: string; description: string; text: string; links: string[]; fetchedAt: Date };
+export type FetchedPage = {
+  url: string;
+  title: string;
+  description: string;
+  text: string;
+  links: string[];
+  fetchedAt: Date;
+  /** Исходный HTML (обрезан до 600 КБ) — для аудита и поиска контактов */
+  html: string;
+  elapsedMs: number;
+  bytes: number;
+  truncated: boolean;
+};
 
 export class FetchBlockedError extends Error {}
 
@@ -29,6 +41,8 @@ function isPrivateIp(ip: string): boolean {
 
 export async function assertPublicUrl(raw: string): Promise<URL> {
   let u: URL;
+  // Явная схема, отличная от http(s) (file://, ftp://, gopher://…), отклоняется сразу, без обращения к DNS
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) && !/^https?:\/\//i.test(raw)) throw new FetchBlockedError("Разрешены только http/https");
   try {
     u = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
   } catch {
@@ -44,7 +58,7 @@ export async function assertPublicUrl(raw: string): Promise<URL> {
   return u;
 }
 
-async function fetchLimited(url: URL, accept: string): Promise<{ res: Response; body: string; finalUrl: URL }> {
+async function fetchLimited(url: URL, accept: string): Promise<{ res: Response; body: string; finalUrl: URL; bytes: number; truncated: boolean }> {
   let current = url;
   for (let hop = 0; hop < 4; hop++) {
     await assertPublicUrl(current.toString());
@@ -58,6 +72,7 @@ async function fetchLimited(url: URL, accept: string): Promise<{ res: Response; 
       }
       const reader = res.body?.getReader();
       let size = 0;
+      let truncated = false;
       const chunks: Uint8Array[] = [];
       if (reader) {
         for (;;) {
@@ -65,6 +80,7 @@ async function fetchLimited(url: URL, accept: string): Promise<{ res: Response; 
           if (done) break;
           size += value.byteLength;
           if (size > MAX_BYTES) {
+            truncated = true;
             ctrl.abort();
             break;
           }
@@ -72,7 +88,7 @@ async function fetchLimited(url: URL, accept: string): Promise<{ res: Response; 
         }
       }
       const body = Buffer.concat(chunks).toString("utf8");
-      return { res, body, finalUrl: current };
+      return { res, body, finalUrl: current, bytes: size, truncated };
     } finally {
       clearTimeout(t);
     }
@@ -138,7 +154,9 @@ export async function fetchPublicPage(raw: string, robotsCache?: Map<string, str
     robotsCache?.set(origin, robots);
   }
   if (!robotsAllows(robots, url.pathname || "/")) throw new FetchBlockedError("Страница закрыта для автоматической обработки (robots.txt)");
-  const { res, body, finalUrl } = await fetchLimited(url, "text/html,application/xhtml+xml");
+  const started = Date.now();
+  const { res, body, finalUrl, bytes, truncated } = await fetchLimited(url, "text/html,application/xhtml+xml");
+  const elapsedMs = Date.now() - started;
   if (!res.ok) throw new FetchBlockedError(`Сайт ответил кодом ${res.status}`);
   const ct = res.headers.get("content-type") ?? "";
   if (!/html/i.test(ct)) throw new FetchBlockedError("Страница не является HTML");
@@ -152,7 +170,17 @@ export async function fetchPublicPage(raw: string, robotsCache?: Map<string, str
       }
     })
     .filter((h) => h.startsWith(finalUrl.origin));
-  return { url: finalUrl.toString(), ...parsed, text: parsed.text.slice(0, 8000), links: [...new Set(links)], fetchedAt: new Date() };
+  return {
+    url: finalUrl.toString(),
+    ...parsed,
+    text: parsed.text.slice(0, 8000),
+    links: [...new Set(links)],
+    fetchedAt: new Date(),
+    html: body.slice(0, 600_000),
+    elapsedMs,
+    bytes,
+    truncated,
+  };
 }
 
 const INTERESTING = /(about|o-nas|o_nas|company|kompaniya|uslugi|services|service|catalog|katalog|portfolio|contacts?|kontakty)/i;

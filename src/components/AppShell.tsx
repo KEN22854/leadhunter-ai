@@ -2,12 +2,15 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Crosshair, LogOut, Menu, Moon, Settings, Sun, Users, WifiOff, X } from "lucide-react";
+import { Crosshair, Flame, LogOut, Megaphone, Menu, Moon, Radar, Settings, Sun, Users, WifiOff, X } from "lucide-react";
 import { clsx } from "@/components/ui";
 import { api, useOnline } from "@/lib/client-api";
 
 const NAV = [
   { href: "/", label: "Лиды", icon: Users },
+  { href: "/discover", label: "Поиск лидов", icon: Radar },
+  { href: "/signals", label: "Спрос в соцсетях", icon: Flame },
+  { href: "/campaigns", label: "Email-кампании", icon: Megaphone },
   { href: "/settings", label: "Настройки", icon: Settings },
 ];
 
@@ -50,8 +53,8 @@ export function AppShell({ user, children }: { user: { name: string; email: stri
             key={n.href}
             href={n.href}
             className={clsx(
-              "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition",
-              active ? "bg-accent/15 text-text ring-1 ring-accent/30" : "text-muted hover:bg-surface2 hover:text-text",
+              "flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition",
+              active ? "bg-accent text-on-accent shadow-[0_6px_20px_-10px_rgb(var(--accent)/0.7)]" : "text-muted hover:bg-surface2 hover:text-text",
             )}
           >
             <n.icon className="h-4 w-4" /> {n.label}
@@ -80,7 +83,7 @@ export function AppShell({ user, children }: { user: { name: string; email: stri
 
   const brand = (
     <Link href="/" className="flex items-center gap-2 px-1">
-      <span className="rounded-lg bg-gradient-to-br from-accent to-accent2 p-1.5 text-white">
+      <span className="rounded-lg bg-accent p-1.5 text-on-accent">
         <Crosshair className="h-4 w-4" />
       </span>
       <span className="text-sm font-bold tracking-wide">LEADHUNTER AI</span>

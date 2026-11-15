@@ -10,6 +10,7 @@ import { ClientHeader } from "./ClientHeader";
 import { ClientOverview } from "./ClientOverview";
 import { ClientContacts } from "./ClientContacts";
 import { AIAnalysisPanel } from "./AIAnalysisPanel";
+import { ReferencePanel } from "./ReferencePanel";
 import { AIMessageStudio } from "./studio/AIMessageStudio";
 import { CommunicationHub } from "./CommunicationHub";
 import { ProposalBuilder } from "./ProposalBuilder";
@@ -23,6 +24,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "overview", label: "Обзор" },
   { key: "contacts", label: "Контакты" },
   { key: "analysis", label: "AI-анализ" },
+  { key: "reference", label: "Референс" },
   { key: "messages", label: "AI-сообщения" },
   { key: "conversations", label: "Переписка" },
   { key: "proposals", label: "Предложения" },
@@ -127,6 +129,7 @@ function ClientProfileInner({ clientId }: { clientId: string }) {
               {tab === "overview" && <ClientOverview />}
               {tab === "contacts" && <ClientContacts />}
               {tab === "analysis" && <AIAnalysisPanel />}
+              {tab === "reference" && <ReferencePanel />}
               {tab === "messages" && <AIMessageStudio />}
               {tab === "conversations" && <CommunicationHub />}
               {tab === "proposals" && <ProposalBuilder />}
@@ -149,7 +152,7 @@ function ClientProfileInner({ clientId }: { clientId: string }) {
       <button
         onClick={() => (window.innerWidth >= 1280 ? setCopilotOpen(true) : setMobileCopilot(true))}
         className={clsx(
-          "fixed bottom-4 right-4 z-30 flex items-center gap-2 rounded-full bg-gradient-to-r from-accent to-accent2 px-4 py-3 text-sm font-medium text-white shadow-xl shadow-accent/30",
+          "fixed bottom-4 right-4 z-30 flex items-center gap-2 rounded-full bg-accent text-on-accent px-4 py-3 text-sm font-medium shadow-xl shadow-black/40",
           copilotOpen && "xl:hidden",
         )}
         aria-label="Открыть AI Copilot"

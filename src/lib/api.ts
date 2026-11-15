@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { ZodError, type ZodType } from "zod";
 import { checkRateLimit } from "./ratelimit";
+import { clientIp } from "./net";
 
 /** Единый формат ошибок API: { error: { code, message, details? } } */
 export class ApiError extends Error {
@@ -21,8 +22,7 @@ export function handler(fn: (req: NextRequest, params: Record<string, string>) =
     try {
       assertSameOrigin(req);
       const params = ctx?.params ? await ctx.params : {};
-      const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
-      const rl = checkRateLimit(`api:${ip}`, 300);
+      const rl = checkRateLimit(`api:${clientIp(req.headers)}`, 600);
       if (!rl.ok) throw new ApiError(429, "rate_limited", "Слишком много запросов", { retryAfterSec: rl.retryAfterSec });
       const out = await fn(req, params);
       if (out instanceof Response) return out;

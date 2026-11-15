@@ -14,6 +14,10 @@ export function checkRateLimit(key: string, limit: number, windowMs = 60_000): {
   return { ok: true, retryAfterSec: 0 };
 }
 
+export function resetRateLimit(key: string) {
+  buckets.delete(key);
+}
+
 export function resetRateLimits() {
   buckets.clear();
 }

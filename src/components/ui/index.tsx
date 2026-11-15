@@ -28,10 +28,10 @@ export const Button = forwardRef<HTMLButtonElement, BtnProps>(function Button(
       title={disabledReason ?? title}
       aria-disabled={isDisabled}
       className={clsx(
-        "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-xl font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
         size === "sm" ? "h-8 px-2.5 text-xs" : "h-9 px-3.5 text-sm",
-        variant === "primary" && "bg-gradient-to-r from-accent to-accent2/90 text-white shadow-lg shadow-accent/20 hover:brightness-110",
-        variant === "secondary" && "border border-border bg-surface2/70 text-text hover:border-accent/60 hover:bg-surface2",
+        variant === "primary" && "bg-accent text-on-accent shadow-[0_8px_24px_-10px_rgb(var(--accent)/0.6)] hover:bg-accent/90",
+        variant === "secondary" && "glass text-text hover:border-accent/40",
         variant === "ghost" && "text-muted hover:bg-surface2 hover:text-text",
         variant === "danger" && "border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20",
         className,

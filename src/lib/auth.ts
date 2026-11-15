@@ -21,6 +21,13 @@ export async function requireUser(): Promise<CurrentUser> {
   return u;
 }
 
+/** Только администратор (глобальные настройки подключений, пользователи). */
+export async function requireAdmin(): Promise<CurrentUser> {
+  const u = await requireUser();
+  if (u.role !== "admin") throw new ApiError(403, "forbidden", "Доступно только администратору");
+  return u;
+}
+
 /** Проверка доступа к клиенту на сервере. Чужой клиент = 404, чтобы не раскрывать факт существования. */
 export async function requireClientAccess(user: CurrentUser, clientId: string) {
   const client = await prisma.client.findUnique({ where: { id: clientId } });

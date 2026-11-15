@@ -35,6 +35,11 @@ export type Client = {
   firstSeenAt: string;
   lastCheckedAt: string | null;
   updatedAt: string;
+  externalId: string;
+  siteAudit: import("@/lib/discovery/audit").SiteAudit | null;
+  siteAuditScore: number | null;
+  siteAuditAt: string | null;
+  workspacePath: string;
   contacts: Contact[];
   tasks: Task[];
   _count: { sources: number; messages: number; proposals: number; conversations: number };
@@ -70,7 +75,7 @@ export type Bundle = {
   score: Score | null;
   analysis: Analysis | null;
   conflicts: number;
-  ai: { configured: boolean; model: string };
+  ai: { configured: boolean; model: string | null; backend: "anthropic" | "claude-code" | null };
 };
 
 export type Task = {
@@ -123,4 +128,4 @@ export type Source = {
   rawReference: string;
 };
 
-export type TabKey = "overview" | "contacts" | "analysis" | "messages" | "conversations" | "proposals" | "tasks" | "sources" | "history";
+export type TabKey = "overview" | "contacts" | "analysis" | "reference" | "messages" | "conversations" | "proposals" | "tasks" | "sources" | "history";

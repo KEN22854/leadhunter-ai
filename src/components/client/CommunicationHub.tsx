@@ -12,7 +12,17 @@ import type { Contact } from "./types";
 type ChannelStatus = { channel: keyof typeof CHANNELS; state: "connected" | "not_configured" | "unavailable"; detail: string; setupHint: string; supportsInbound: boolean };
 type Item = { id: string; direction: "inbound" | "outbound"; subject: string; body: string; status: keyof typeof DELIVERY_STATUSES; error: string; createdAt: string; sentAt: string | null; approvedAt: string | null };
 type Conversation = { id: string; channel: keyof typeof CHANNELS; externalThreadId: string; contact: Contact | null; lastInboundAt: string | null; items: Item[] };
-type Consent = { id: string; basis: keyof typeof CONSENT_BASES; note: string; createdAt: string; contact: Contact | null };
+type Consent = {
+  id: string;
+  basis: keyof typeof CONSENT_BASES;
+  note: string;
+  sourceUrl: string;
+  createdAt: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  revokeReason: string;
+  contact: Contact | null;
+};
 
 const STATUS_TONE: Record<string, "neutral" | "warn" | "info" | "ok" | "danger" | "accent"> = {
   draft: "neutral",
@@ -207,7 +217,7 @@ function ConsentsSection() {
   const { clientId, bundle } = useClient();
   const toast = useToast();
   const { data, reload } = useApi<{ consents: Consent[] }>(`/api/clients/${clientId}/consents`);
-  const [f, setF] = useState({ basis: "legitimate_interest", contactId: "", note: "" });
+  const [f, setF] = useState({ basis: "legitimate_interest", contactId: "", note: "", sourceUrl: "", validDays: "" });
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   return (
@@ -217,24 +227,43 @@ function ConsentsSection() {
       </SectionTitle>
       {data?.consents.length ? (
         <ul className="space-y-1.5 text-sm">
-          {data.consents.map((c) => (
-            <li key={c.id} className="flex flex-wrap items-center gap-2">
-              <Badge tone="ok">{CONSENT_BASES[c.basis]}</Badge>
-              <span className="text-muted">{c.contact ? c.contact.value : "все контакты клиента"}</span>
-              <span className="min-w-0 flex-1">{c.note}</span>
-              <span className="text-xs text-muted">{fmtDate(c.createdAt)}</span>
-              <button
-                className="text-muted hover:text-danger"
-                aria-label="Удалить основание"
-                onClick={async () => {
-                  await api("DELETE", `/api/clients/${clientId}/consents?id=${c.id}`).catch(() => {});
-                  await reload();
-                }}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </li>
-          ))}
+          {data.consents.map((c) => {
+            const expired = c.expiresAt && new Date(c.expiresAt) < new Date();
+            const active = !c.revokedAt && !expired;
+            return (
+              <li key={c.id} className={`flex flex-wrap items-center gap-2 ${active ? "" : "opacity-60"}`}>
+                <Badge tone={active ? "ok" : "neutral"}>{CONSENT_BASES[c.basis]}</Badge>
+                {c.revokedAt && <Badge tone="danger">Отозвано {fmtDate(c.revokedAt)}</Badge>}
+                {expired && !c.revokedAt && <Badge tone="warn">Истекло</Badge>}
+                <span className="text-muted">{c.contact ? c.contact.value : "все контакты клиента"}</span>
+                <span className="min-w-0 flex-1">
+                  {c.note}
+                  {c.sourceUrl && (
+                    <a className="ml-1 text-accent hover:underline" href={c.sourceUrl} target="_blank" rel="noopener noreferrer">
+                      источник
+                    </a>
+                  )}
+                </span>
+                <span className="text-xs text-muted">
+                  {fmtDate(c.createdAt)}
+                  {c.expiresAt && active ? ` · до ${fmtDate(c.expiresAt)}` : ""}
+                </span>
+                {active && (
+                  <button
+                    className="text-muted hover:text-danger"
+                    aria-label="Отозвать основание"
+                    title="Отозвать (запись останется в журнале)"
+                    onClick={async () => {
+                      await api("DELETE", `/api/clients/${clientId}/consents?id=${c.id}`).catch(() => {});
+                      await reload();
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <Notice tone="warn">Основание не зафиксировано — отправка будет заблокирована. Укажите, на каком основании вы обращаетесь (например, опубликованный заказ или деловой адрес для B2B-предложений).</Notice>
@@ -246,9 +275,15 @@ function ConsentsSection() {
             e.preventDefault();
             setErr(null);
             try {
-              await api("POST", `/api/clients/${clientId}/consents`, { ...f, contactId: f.contactId || null });
+              await api("POST", `/api/clients/${clientId}/consents`, {
+                basis: f.basis,
+                note: f.note,
+                sourceUrl: f.sourceUrl,
+                contactId: f.contactId || null,
+                validDays: f.validDays ? Number(f.validDays) : null,
+              });
               toast("success", "Основание зафиксировано");
-              setF({ ...f, note: "" });
+              setF({ ...f, note: "", sourceUrl: "" });
               setOpen(false);
               await reload();
             } catch (e) {
@@ -264,12 +299,14 @@ function ConsentsSection() {
           <Button type="submit" variant="primary">
             Сохранить
           </Button>
+          <Field label="Ссылка на источник">{(id) => <input id={id} className="input" value={f.sourceUrl} onChange={(e) => setF({ ...f, sourceUrl: e.target.value })} placeholder="https://… (где опубликован контакт)" />}</Field>
+          <Field label="Срок действия, дней">{(id) => <input id={id} className="input" inputMode="numeric" value={f.validDays} onChange={(e) => setF({ ...f, validDays: e.target.value.replace(/\D/g, "").slice(0, 4) })} placeholder="бессрочно" />}</Field>
           <div className="sm:col-span-4">
             <InlineError text={err} />
           </div>
         </form>
       )}
-      <p className="mt-2 text-[11px] text-muted">Учитывайте 152-ФЗ, GDPR, правила прямого маркетинга и законодательство страны получателя. Массовая рассылка не поддерживается — каждая отправка подтверждается вручную.</p>
+      <p className="mt-2 text-[11px] text-muted">Учитывайте 152-ФЗ, GDPR, правила прямого маркетинга и законодательство страны получателя. Отправка из карточки подтверждается вручную; пакетная отправка — только через одобренную кампанию с лимитами.</p>
     </section>
   );
 }

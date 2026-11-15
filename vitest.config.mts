@@ -18,6 +18,7 @@ export default defineConfig({
       DATABASE_URL: "file:./test.db",
       AUTH_SECRET: "test-secret-test-secret-test-secret-0123456789",
       ANTHROPIC_API_KEY: "",
+      AI_DISABLE_CLAUDE_CODE: "1",
     },
   },
 });

@@ -19,13 +19,17 @@ model User {
   role         String   @default("manager") // manager | admin
   createdAt    DateTime @default(now())
 
-  profile     ExecutorProfile?
-  clients     Client[]
-  templates   MessageTemplate[]
-  suppression SuppressionEntry[]
-  tasks       ClientTask[]        @relation("TaskAssignee")
-  usage       AIUsageLog[]
-  audit       AuditLog[]
+  profile         ExecutorProfile?
+  clients         Client[]
+  templates       MessageTemplate[]
+  suppression     SuppressionEntry[]
+  tasks           ClientTask[]       @relation("TaskAssignee")
+  usage           AIUsageLog[]
+  audit           AuditLog[]
+  searches        LeadSearch[]
+  campaigns       Campaign[]
+  signalCampaigns SignalCampaign[]
+  socialLeads     SocialLead[]
 }
 
 // Профиль исполнителя: «допустимые факты», которые ИИ может использовать о пользователе
@@ -48,28 +52,35 @@ model ExecutorProfile {
 }
 
 model Client {
-  id            String    @id @default(cuid())
-  ownerId       String
-  owner         User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  companyName   String
-  description   String    @default("")
-  category      String    @default("")
-  industry      String    @default("")
-  country       String    @default("")
-  region        String    @default("")
-  city          String    @default("")
-  website       String    @default("")
-  logoUrl       String    @default("")
-  language      String    @default("ru")
-  status        String    @default("new")
-  priority      String    @default("medium")
-  archived      Boolean   @default(false)
-  doNotContact  Boolean   @default(false)
-  firstSeenAt   DateTime  @default(now())
-  lastCheckedAt DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  ownerId        String
+  owner          User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  companyName    String
+  description    String    @default("")
+  category       String    @default("")
+  industry       String    @default("")
+  country        String    @default("")
+  region         String    @default("")
+  city           String    @default("")
+  website        String    @default("")
+  logoUrl        String    @default("")
+  language       String    @default("ru")
+  status         String    @default("new")
+  priority       String    @default("medium")
+  archived       Boolean   @default(false)
+  doNotContact   Boolean   @default(false)
+  firstSeenAt    DateTime  @default(now())
+  lastCheckedAt  DateTime?
+  externalId     String    @default("") // источник импорта, напр. osm:node/123 — защита от дублей
+  siteAudit      Json? // результат автоматического аудита сайта (что улучшить)
+  siteAuditScore Int?
+  siteAuditAt    DateTime?
+  workspacePath  String    @default("") // рабочая папка проекта после согласия клиента
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
+  references    Reference[]
+  campaignItems CampaignItem[]
   contacts      Contact[]
   sources       LeadSource[]
   provenance    FieldProvenance[]
@@ -86,25 +97,26 @@ model Client {
   usage         AIUsageLog[]
 
   @@index([ownerId, archived])
+  @@index([ownerId, externalId])
 }
 
 model Contact {
-  id                 String    @id @default(cuid())
+  id                 String      @id @default(cuid())
   clientId           String
-  client             Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client             Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
   type               String // email | phone | website | telegram | whatsapp | linkedin | social | other
   value              String
   normalizedValue    String
-  label              String    @default("")
+  label              String      @default("")
   sourceId           String?
   source             LeadSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
-  verificationStatus String    @default("found") // found | formal | confirmed | invalid | unknown
+  verificationStatus String      @default("found") // found | formal | confirmed | invalid | unknown
   verifiedAt         DateTime?
   lastCheckedAt      DateTime?
-  discoveredAt       DateTime  @default(now())
-  doNotContact       Boolean   @default(false)
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  discoveredAt       DateTime    @default(now())
+  doNotContact       Boolean     @default(false)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 
   conversations Conversation[]
   consents      ConsentRecord[]
@@ -136,15 +148,15 @@ model LeadSource {
 
 // Происхождение значений полей; несколько записей на одно поле = возможный конфликт
 model FieldProvenance {
-  id         String     @id @default(cuid())
+  id         String      @id @default(cuid())
   clientId   String
-  client     Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client     Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
   field      String
   value      String
   sourceId   String?
   source     LeadSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
-  capturedAt DateTime   @default(now())
-  selected   Boolean    @default(false)
+  capturedAt DateTime    @default(now())
+  selected   Boolean     @default(false)
 
   @@index([clientId, field])
 }
@@ -180,33 +192,33 @@ model LeadScore {
 }
 
 model AIMessage {
-  id              String    @id @default(cuid())
+  id              String   @id @default(cuid())
   clientId        String
-  client          Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client          Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
   contactId       String?
-  contact         Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  contact         Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
   generationId    String // объединяет три варианта одной генерации
   variantKey      String // recommended | short | expert | manual
-  label           String    @default("")
+  label           String   @default("")
   channel         String
   language        String
   tone            String
   goal            String
   service         String
   length          String
-  instructions    String    @default("")
-  subject         String    @default("")
+  instructions    String   @default("")
+  subject         String   @default("")
   body            String
   personalization Json
   assumptions     Json
   warnings        Json
   evidence        Json? // { serviceRationale, toVerify[] } — блок «Почему ИИ составил именно это сообщение?»
-  status          String    @default("draft") // draft | saved | queued | sent | archived
-  version         Int       @default(1)
-  model           String    @default("")
-  promptVersion   String    @default("")
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  status          String   @default("draft") // draft | saved | queued | sent | archived
+  version         Int      @default(1)
+  model           String   @default("")
+  promptVersion   String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   versions AIMessageVersion[]
 
@@ -273,6 +285,7 @@ model ConversationMessage {
   idempotencyKey String?      @unique
   approvedAt     DateTime?
   approvedById   String?
+  attachments    Json? // [{ kind: "reference_pdf" | "reference_html", referenceId }]
   sentAt         DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
@@ -352,15 +365,19 @@ model ProposalVersion {
 }
 
 model ConsentRecord {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   clientId     String
-  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client       Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
   contactId    String?
-  contact      Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contact      Contact?  @relation(fields: [contactId], references: [id], onDelete: Cascade)
   basis        String // consent | published_request | legitimate_interest | existing_relationship
-  note         String   @default("")
+  note         String    @default("")
+  sourceUrl    String    @default("") // где опубликован контакт/запрос (для законного интереса)
   recordedById String
-  createdAt    DateTime @default(now())
+  expiresAt    DateTime?
+  revokedAt    DateTime?
+  revokeReason String    @default("")
+  createdAt    DateTime  @default(now())
 }
 
 model SuppressionEntry {
@@ -413,4 +430,364 @@ model AuditLog {
   entityId  String
   meta      Json
   createdAt DateTime @default(now())
+}
+
+// ---------- Поиск предприятий (OpenStreetMap) ----------
+model LeadSearch {
+  id            String    @id @default(cuid())
+  ownerId       String
+  owner         User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  category      String // ключ категории из src/lib/discovery/categories.ts или custom
+  categoryLabel String
+  osmFilter     String // напр. ["amenity"="cafe"]
+  country       String
+  city          String
+  status        String    @default("running") // running | done | failed
+  scope         String    @default("city") // city | country | world
+  limitN        Int       @default(0) // 0 = без ограничения (до лимита честного использования источника)
+  fetched       Int       @default(0)
+  stopRequested Boolean   @default(false)
+  heartbeatAt   DateTime?
+  total         Int       @default(0)
+  error         String    @default("")
+  createdAt     DateTime  @default(now())
+  finishedAt    DateTime?
+
+  results SearchResult[]
+
+  @@index([ownerId, createdAt])
+}
+
+model SearchResult {
+  id           String     @id @default(cuid())
+  searchId     String
+  search       LeadSearch @relation(fields: [searchId], references: [id], onDelete: Cascade)
+  ownerId      String
+  externalId   String // osm:node/123
+  name         String
+  category     String     @default("")
+  address      String     @default("")
+  city         String     @default("")
+  country      String     @default("")
+  lat          Float?
+  lon          Float?
+  website      String     @default("")
+  phone        String     @default("")
+  hasSocial    Boolean    @default(false) // в OSM указаны соцсети/мессенджеры
+  emails       Json? // [{ email, source, url }]
+  enrichStatus String     @default("pending") // pending | running | done | no_site | failed
+  enrichError  String     @default("")
+  audit        Json?
+  auditScore   Int?
+  enrichedAt   DateTime?
+  clientId     String? // если добавлен в CRM
+  rank         Int        @default(0) // популярность + известность + возможность написать (0–100)
+  rankNote     String     @default("")
+  importance   Float?
+  hasEmail     Boolean    @default(false)
+  hasWebsite   Boolean    @default(false)
+  opportunity  String     @default("") // high | medium | low (после аудита)
+  createdAt    DateTime   @default(now())
+
+  @@unique([searchId, externalId])
+  @@index([ownerId, enrichStatus])
+  @@index([searchId, rank])
+  @@index([enrichStatus, rank])
+}
+
+// ---------- Референс: концепция улучшений + HTML-прототип ----------
+model Reference {
+  id            String   @id @default(cuid())
+  clientId      String
+  client        Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  title         String   @default("")
+  concept       Json // структура концепции (см. ReferenceConceptSchema)
+  html          String   @default("") // самодостаточный HTML-прототип (без скриптов)
+  emailSubject  String   @default("")
+  emailBody     String   @default("")
+  model         String   @default("")
+  promptVersion String   @default("")
+  status        String   @default("draft") // draft | approved
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([clientId, createdAt])
+}
+
+// ---------- Кампании: одобренная пачка писем, отправляемых автоматически с лимитами ----------
+model Campaign {
+  id             String    @id @default(cuid())
+  ownerId        String
+  owner          User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name           String
+  status         String    @default("draft") // draft | running | paused | done
+  attachPdf      Boolean   @default(true)
+  attachHtml     Boolean   @default(false)
+  dailyLimit     Int       @default(25)
+  intervalMin    Int       @default(4)
+  windowStart    Int       @default(9) // часы локального времени сервера
+  windowEnd      Int       @default(19)
+  basisConfirmed Boolean   @default(false)
+  approvedAt     DateTime?
+  lastSentAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  items CampaignItem[]
+
+  @@index([ownerId, status])
+}
+
+model CampaignItem {
+  id          String    @id @default(cuid())
+  campaignId  String
+  campaign    Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  clientId    String
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  contactId   String?
+  referenceId String?
+  subject     String    @default("")
+  body        String    @default("")
+  status      String    @default("draft") // draft | ready | sending | sent | failed | skipped | replied | opted_out
+  error       String    @default("")
+  outboundId  String? // ConversationMessage.id
+  sentAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([campaignId, clientId])
+  @@index([status])
+}
+
+// Служебное состояние фоновых задач (офсет Telegram, UID IMAP и т.п.)
+model AppState {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// ================= МОДУЛЬ 2: поиск спроса в соцсетях, на биржах и в сообществах =================
+
+// Поисковая кампания: что ищем, где и как часто
+model SignalCampaign {
+  id           String    @id @default(cuid())
+  ownerId      String
+  owner        User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name         String
+  service      String // ключ из src/lib/signals/services.ts
+  country      String    @default("")
+  city         String    @default("")
+  languages    Json // ["ru","en"]
+  sources      Json // ["fl_ru","freelancer",...]
+  keywords     Json // дополнительные ключевые фразы пользователя
+  excludeWords Json? // стоп-слова
+  businessType String    @default("")
+  orderType    String    @default("any") // any | one_time | ongoing | launch
+  periodDays   Int       @default(14)
+  maxResults   Int       @default(100)
+  minScore     Int       @default(40)
+  schedule     String    @default("once") // once | daily | weekly
+  feeds        Json? // пользовательские RSS-ленты сообществ
+  channels     Json? // публичные Telegram-каналы, сабреддиты, сообщества VK
+  useAI        Boolean   @default(true)
+  status       String    @default("active") // active | paused
+  nextRunAt    DateTime?
+  lastRunAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  runs    SignalRun[]
+  signals LeadSignal[]
+
+  @@index([ownerId, status])
+  @@index([status, nextRunAt])
+}
+
+model SignalRun {
+  id         String         @id @default(cuid())
+  campaignId String
+  campaign   SignalCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  trigger    String         @default("manual") // manual | schedule | retry
+  status     String         @default("running") // running | done | partial | failed
+  stats      Json? // по источникам: { fetched, matched, saved, error, skipped }
+  fetched    Int            @default(0)
+  matched    Int            @default(0)
+  saved      Int            @default(0)
+  newLeads   Int            @default(0)
+  error      String         @default("")
+  startedAt  DateTime       @default(now())
+  finishedAt DateTime?
+
+  @@index([campaignId, startedAt])
+}
+
+// Человек или компания, проявившие спрос. Объединяет все найденные публикации и идентификаторы.
+model SocialLead {
+  id               String    @id @default(cuid())
+  ownerId          String
+  owner            User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  displayName      String
+  headline         String    @default("") // сфера деятельности / описание профиля, если публично
+  profileUrl       String    @default("")
+  primarySource    String
+  country          String    @default("")
+  city             String    @default("")
+  language         String    @default("")
+  service          String    @default("")
+  intent           String    @default("unknown")
+  temperature      String    @default("potential") // hot | warm | potential | cold
+  score            Int       @default(0)
+  scoreFactors     Json?
+  scoreExplanation String    @default("")
+  status           String    @default("new") // new | qualified | contacted | replied | positive | declined | converted | archived
+  doNotContact     Boolean   @default(false)
+  clientId         String? // карточка в CRM после конвертации
+  notes            String    @default("")
+  firstSeenAt      DateTime  @default(now())
+  lastSeenAt       DateTime  @default(now())
+  firstContactAt   DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  signals    LeadSignal[]
+  identities LeadIdentity[]
+  drafts     OutreachDraft[]
+  attempts   OutreachAttempt[]
+
+  @@index([ownerId, temperature, score])
+  @@index([ownerId, status])
+}
+
+// Ключи дедупликации: профиль, домен, email, телефон, id источника
+model LeadIdentity {
+  id        String     @id @default(cuid())
+  ownerId   String
+  leadId    String
+  lead      SocialLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  kind      String // profile | domain | email | phone | source_id
+  value     String // нормализованное значение
+  source    String     @default("")
+  createdAt DateTime   @default(now())
+
+  @@unique([ownerId, kind, value])
+  @@index([leadId])
+}
+
+// Публикация (пост, заказ, комментарий), в которой обнаружен спрос
+model LeadSignal {
+  id            String          @id @default(cuid())
+  ownerId       String
+  leadId        String
+  lead          SocialLead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaignId    String?
+  campaign      SignalCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  runId         String?
+  source        String
+  externalId    String
+  url           String
+  title         String          @default("")
+  text          String
+  authorName    String          @default("")
+  authorUrl     String          @default("")
+  publishedAt   DateTime?
+  language      String          @default("")
+  budget        String          @default("")
+  matchedTerms  Json?
+  intent        String          @default("unknown")
+  intentScore   Int             @default(0)
+  intentReasons Json?
+  aiIntent      Json? // результат AI-классификации (если выполнялась)
+  serviceMatch  Int             @default(0)
+  score         Int             @default(0)
+  scoreFactors  Json?
+  temperature   String          @default("potential")
+  createdAt     DateTime        @default(now())
+
+  @@unique([ownerId, source, externalId])
+  @@index([leadId])
+  @@index([campaignId, createdAt])
+}
+
+// Подготовленные персональные обращения (3 варианта + ручные правки)
+model OutreachDraft {
+  id            String     @id @default(cuid())
+  leadId        String
+  lead          SocialLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  signalId      String?
+  generationId  String
+  variant       String // friendly | business | short | manual
+  language      String
+  subject       String     @default("")
+  body          String
+  evidence      Json? // на какие факты публикации опирается сообщение
+  warnings      Json?
+  origin        String     @default("ai") // ai | template | edited | rewrite
+  model         String     @default("")
+  promptVersion String     @default("")
+  status        String     @default("draft") // draft | saved | used | archived
+  version       Int        @default(1)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([leadId, createdAt])
+}
+
+// Попытка коммуникации. Статусы — только подтверждённые факты:
+// prepared → opened (открыт исходный диалог) → confirmed_sent (пользователь подтвердил ручную отправку)
+// | sent (отправлено через официальный канал) | failed | cancelled. Ответ — в outcome.
+model OutreachAttempt {
+  id             String     @id @default(cuid())
+  leadId         String
+  lead           SocialLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  draftId        String?
+  signalId       String?
+  mode           String // api | open_dialog | platform_reply
+  channel        String // email | reddit | telegram | fl_ru ...
+  target         String     @default("") // URL диалога/публикации или адрес
+  subject        String     @default("")
+  body           String
+  status         String     @default("prepared")
+  outcome        String     @default("none") // none | replied | positive | negative | no_response
+  error          String     @default("")
+  outboundId     String? // ConversationMessage.id при отправке через CRM
+  idempotencyKey String?    @unique
+  preparedAt     DateTime   @default(now())
+  openedAt       DateTime?
+  sentAt         DateTime?
+  repliedAt      DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([leadId])
+  @@index([status])
+}
+
+// Журнал оснований обработки персональных данных (сохраняется после удаления лида)
+model ProcessingLog {
+  id        String   @id @default(cuid())
+  ownerId   String
+  leadId    String? // без внешнего ключа: запись переживает удаление лида
+  subject   String // кого касается (после удаления — обезличено)
+  action    String // collected | merged | contacted | converted | opted_out | deleted
+  basis     String // published_request | legitimate_interest | consent | user_request
+  sourceUrl String   @default("")
+  note      String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([ownerId, createdAt])
+  @@index([leadId])
+}
+
+// Состояние источника: ошибки, лимиты, бэкофф
+model SourceState {
+  source           String    @id
+  lastRequestAt    DateTime?
+  lastOkAt         DateTime?
+  lastErrorAt      DateTime?
+  lastError        String    @default("")
+  consecutiveFails Int       @default(0)
+  backoffUntil     DateTime?
+  requestsToday    Int       @default(0)
+  dayKey           String    @default("")
+  updatedAt        DateTime  @updatedAt
 }
